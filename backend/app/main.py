@@ -40,13 +40,15 @@ app.add_middleware(
 # Import services and routes
 from .routes import generation, agents, analytics, auth, datasets, ai_config
 from .services.gemini_service import GeminiService
+from .services.ollama_service import OllamaService
 from .services.agent_orchestrator import AgentOrchestrator
 from .services.websocket_manager import ConnectionManager
 from .services.ai_service import ai_service
 
 # Initialize services
 gemini_service = GeminiService()
-orchestrator = AgentOrchestrator()
+ollama_service = OllamaService()
+orchestrator = AgentOrchestrator(ollama_service=ollama_service)
 websocket_manager = ConnectionManager()
 
 # Optional authentication
@@ -64,10 +66,14 @@ async def startup_event():
     """Initialize services on startup"""
     logger.info("🚀 Starting DataGenesis AI API...")
     await gemini_service.initialize()
+    await ollama_service.initialize()
     await orchestrator.initialize()
     
     # Log initialization status without consuming quota
-    logger.info("🤖 Gemini Service: Initialized successfully (quota-preserving mode)")
+    gemini_status = "initialized" if gemini_service.is_initialized else "not configured"
+    ollama_status = "initialized" if ollama_service.is_initialized else "not available"
+    logger.info(f"🤖 Gemini Service: {gemini_status}")
+    logger.info(f"🦙 Ollama Service: {ollama_status}")
     
     logger.info("🎯 DataGenesis AI API started successfully!")
 
@@ -111,8 +117,12 @@ async def root():
 @app.get("/api/health")
 async def health_check():
     """Health check endpoint"""
-    # Check Gemini service health
+    # Check AI services health
     gemini_status = await gemini_service.health_check()
+    ollama_status = await ollama_service.health_check()
+    
+    # Determine overall AI availability
+    ai_available = gemini_status.get("status") == "online" or ollama_status.get("status") == "online"
     
     health_status = {
         "status": "healthy",
@@ -120,8 +130,10 @@ async def health_check():
         "version": "1.0.0",
         "environment": "production",
         "message": "DataGenesis AI is running",
+        "ai_available": ai_available,
         "services": {
             "gemini": gemini_status,
+            "ollama": ollama_status,
             "agents": "active",
             "websockets": "ready"
         }

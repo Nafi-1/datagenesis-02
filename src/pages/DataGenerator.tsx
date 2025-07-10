@@ -109,6 +109,35 @@ const DataGenerator: React.FC = () => {
         setGenerationProgress(data.progress);
       }
       
+      // Add real-time log entry for agent activities
+      if (data.step && data.message) {
+        const logEntry = {
+          id: Date.now() + Math.random(),
+          timestamp: new Date().toISOString(),
+          level: data.progress === -1 ? 'error' : data.progress === 100 ? 'success' : 'info',
+          message: data.message,
+          step: data.step,
+          progress: data.progress,
+          agent: data.step.includes('domain') ? 'domain' : 
+                 data.step.includes('privacy') ? 'privacy' :
+                 data.step.includes('bias') ? 'bias' :
+                 data.step.includes('relationship') ? 'relationship' :
+                 data.step.includes('quality') ? 'quality' :
+                 data.step.includes('generation') ? 'gemini' : 'system',
+          metrics: data.agent_data ? {
+            qualityScore: data.agent_data.quality_score,
+            privacyScore: data.agent_data.privacy_score,
+            biasScore: data.agent_data.bias_score
+          } : undefined
+        };
+        
+        setProcessLogs(prev => {
+          const newLogs = [...prev, logEntry];
+          // Keep only the last 50 logs to prevent memory issues
+          return newLogs.slice(-50);
+        });
+      }
+      
       if (data.progress === 100) {
         setIsGenerating(false);
         setGenerationStep(4);

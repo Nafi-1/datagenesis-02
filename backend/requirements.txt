@@ -11,7 +11,7 @@ supabase>=2.0.0,<3.0.0
 redis>=5.0.0,<6.0.0
 
 # HTTP client - let other packages determine compatible version
-httpx>=0.24.0
+httpx>=0.27.0
 
 # Authentication and security
 python-jose[cryptography]>=3.3.0,<4.0.0

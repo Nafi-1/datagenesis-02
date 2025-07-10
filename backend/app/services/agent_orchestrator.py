@@ -6,14 +6,16 @@ import uuid
 import logging
 
 from .gemini_service import GeminiService
+from .ollama_service import OllamaService
 from .redis_service import RedisService
 from .vector_service import VectorService
 
 logger = logging.getLogger(__name__)
 
 class AgentOrchestrator:
-    def __init__(self, redis_service=None, gemini_service=None, vector_service=None):
+    def __init__(self, redis_service=None, gemini_service=None, ollama_service=None, vector_service=None):
         self.gemini_service = gemini_service or GeminiService()
+        self.ollama_service = ollama_service or OllamaService()
         self.redis_service = redis_service or RedisService()
         self.vector_service = vector_service or VectorService()
         self.agents = {
@@ -31,6 +33,7 @@ class AgentOrchestrator:
         
         # Initialize services  
         await self.gemini_service.initialize()
+        await self.ollama_service.initialize()
         await self.redis_service.initialize()
         await self.vector_service.initialize()
         
@@ -230,16 +233,39 @@ class AgentOrchestrator:
         
         logger.info("🎨 Generating synthetic data with multi-agent context...")
         
-        # Use Gemini service with enhanced context
-        synthetic_data = await self.gemini_service.generate_synthetic_data(
-            schema=context['schema'],
-            config=context['config'],
-            description=context['description'],
-            source_data=source_data
-        )
+        # Try Gemini first, then Ollama, then fallback
+        try:
+            if self.gemini_service.is_initialized:
+                synthetic_data = await self.gemini_service.generate_synthetic_data(
+                    schema=context['schema'],
+                    config=context['config'],
+                    description=context['description'],
+                    source_data=source_data
+                )
+                logger.info(f"✅ Generated {len(synthetic_data)} records using Gemini")
+                return synthetic_data
+        except Exception as e:
+            logger.warning(f"⚠️ Gemini generation failed: {str(e)}")
+            
+        # Try Ollama as fallback
+        try:
+            if self.ollama_service.is_initialized:
+                logger.info("🦙 Falling back to Ollama for data generation...")
+                synthetic_data = await self.ollama_service.generate_synthetic_data(
+                    schema=context['schema'],
+                    config=context['config'],
+                    description=context['description'],
+                    source_data=source_data
+                )
+                logger.info(f"✅ Generated {len(synthetic_data)} records using Ollama")
+                return synthetic_data
+        except Exception as e:
+            logger.warning(f"⚠️ Ollama generation failed: {str(e)}")
         
-        logger.info(f"✅ Generated {len(synthetic_data)} contextual synthetic records")
-        return synthetic_data
+        # Ultimate fallback - intelligent data generation without AI
+        logger.info("🔧 Using intelligent fallback generation...")
+        row_count = context['config'].get('rowCount', 10)
+        return self._generate_intelligent_fallback_data(context['schema'], row_count)
     
     def _generate_intelligent_fallback_data(self, schema: Dict[str, Any], row_count: int) -> List[Dict[str, Any]]:
         """Generate intelligent fallback data when AI generation fails"""
@@ -436,9 +462,11 @@ class DomainExpertAgent(BaseAgent):
             if data and isinstance(data, list):
                 safe_data = data[:3] if len(data) > 3 else data
             
-            # Use Gemini for comprehensive analysis if available
+            # Use Gemini or Ollama for comprehensive analysis
             if self.gemini_service and self.gemini_service.is_initialized:
-                analysis = await self.gemini_service.analyze_data_comprehensive(safe_data, config)
+                analysis = await self.gemini_service.analyze_data_comprehensive(safe_data, schema, config, description)
+            elif hasattr(self, 'ollama_service') and self.ollama_service and self.ollama_service.is_initialized:
+                analysis = await self.ollama_service.analyze_data_comprehensive(safe_data, schema, config, description)
             else:
                 # Fallback analysis
                 analysis = {
@@ -512,9 +540,11 @@ class BiasDetectionAgent(BaseAgent):
             if data and isinstance(data, list):
                 safe_data = data[:3] if len(data) > 3 else data.copy()
             
-            # Use Gemini for bias detection if available
+            # Use Gemini or Ollama for bias detection
             if self.gemini_service and self.gemini_service.is_initialized:
-                bias_analysis = await self.gemini_service.detect_bias_comprehensive(safe_data, config)
+                bias_analysis = await self.gemini_service.detect_bias_comprehensive(safe_data, config, domain_context)
+            elif hasattr(self, 'ollama_service') and self.ollama_service and self.ollama_service.is_initialized:
+                bias_analysis = await self.ollama_service.detect_bias_comprehensive(safe_data, config, domain_context)
             else:
                 # Fallback bias analysis
                 bias_analysis = {
